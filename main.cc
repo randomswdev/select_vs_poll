@@ -11,6 +11,12 @@
 #include <set>
 #include <vector>
 
+#ifdef USE_SELECT
+#include "select.h"
+#else
+#include "poll.h"
+#endif
+
 #define FAIL_IF_ERROR( expr ) \
 	if( ( expr ) == -1 ) \
 	{ \
@@ -77,24 +83,28 @@ int main( int argc, char* argv[] )
 	{
 		int max_fd;
 		
-		fd_set read_set;
-		FD_ZERO( &read_set );
+		MY_fd_set read_set;
+		MY_FD_ZERO( &read_set );
 		
-		FD_SET( server_fd, &read_set );
+		MY_FD_SET( server_fd, &read_set );
 		max_fd = server_fd;
 		for( std::set<int>::const_iterator it = connections.begin(); it != connections.end(); it++ )
 		{
 			int s = *it;
-			FD_SET( s, &read_set );
+			MY_FD_SET( s, &read_set );
 			max_fd = std::max( max_fd, s );
 		}
 	
+#ifdef USE_SELECT
 		FAIL_IF_ERROR( ret = select( max_fd + 1, &read_set, NULL, NULL, NULL ) );
+#else
+		FAIL_IF_ERROR( ret = poll( read_set.data(), read_set.size(), -1 ) );
+#endif			
 		
 		if( ret == 0 )
 			continue;
 		
-		if( FD_ISSET( server_fd, &read_set ) )
+		if( MY_FD_ISSET( server_fd, &read_set ) )
 		{
 			FAIL_IF_ERROR( ret = accept( server_fd, NULL, NULL ) );
 			connections.insert( ret );
@@ -103,13 +113,10 @@ int main( int argc, char* argv[] )
 		for( std::set<int>::const_iterator it = connections.begin(); it != connections.end(); )
 		{
 			int s = *it;
-			if ( FD_ISSET( s, &read_set ) )
+			if ( MY_FD_ISSET( s, &read_set ) )
 			{
-				close( s );
-				std::set<int>::const_iterator tmp = it;
-				tmp++;
-				connections.erase( it );
-				it = tmp;
+				close( *it );
+				connections.erase( it++ );
 			}
 			else
 			{
